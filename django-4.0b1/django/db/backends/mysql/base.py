@@ -101,6 +101,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     # types, as strings. Column-type strings can contain format strings; they'll
     # be interpolated against the values of Field.__dict__ before being output.
     # If a column type is set to None, it won't be included in the output.
+    # data_types字典用于以字符串的方式映射mysql中的列类型
     data_types = {
         'AutoField': 'integer AUTO_INCREMENT',
         'BigAutoField': 'bigint AUTO_INCREMENT',

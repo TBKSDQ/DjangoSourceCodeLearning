@@ -19,6 +19,7 @@ connections = ConnectionHandler()
 router = ConnectionRouter()
 
 # For backwards compatibility. Prefer connections['default'] instead.
+# 实际上做的是从connections中获得名为DEFAULT_DB_ALIAS的连接对象
 connection = ConnectionProxy(connections, DEFAULT_DB_ALIAS)
 
 
