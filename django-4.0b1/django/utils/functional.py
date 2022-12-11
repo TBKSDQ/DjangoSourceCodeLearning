@@ -8,6 +8,12 @@ class cached_property:
     """
     Decorator that converts a method with a single self argument into a
     property cached on the instance.
+    将带有self参数的方法装饰成一个属性(类似于@property的作用)，与@property不同的
+    地方是会将装饰后的方法的执行结果记录到调用该方法的实例当中。
+    流程:
+        1. 使用@cached_property装饰一个实例方法
+        2. 外部通过调用xxx.yyy调用装饰过后的方法时(经过装饰，已经变为了cached_property类实例)，就会调用
+        当前类的__get__方法
 
     A cached property can be made out of an existing method:
     (e.g. ``url = cached_property(get_absolute_url)``).
@@ -42,6 +48,8 @@ class cached_property:
         Call the function and put the return value in instance.__dict__ so that
         subsequent attribute access on the instance returns the cached value
         instead of calling cached_property.__get__().
+        当首次直接调用@cached_property装饰的方法时，会将将传入的方法的结果记录到对应
+        实例对象的__dict__中，这样下一次就可以直接从实例对象中获取了。
         """
         if instance is None:
             return self

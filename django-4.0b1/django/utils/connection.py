@@ -53,6 +53,7 @@ class BaseConnectionHandler:
         self._settings = settings
         self._connections = Local(self.thread_critical)
 
+    # 使用该装饰器装饰后，只会在首次执行对应的方法，后面对会从当前实例对象中获取属性值
     @cached_property
     def settings(self):
         self._settings = self.configure_settings(self._settings)
