@@ -12,13 +12,22 @@ logger = logging.getLogger('django.db.backends')
 
 
 class CursorWrapper:
+    """
+        猜测这个CursorWrapper的主要作用是为了统一实现__enter__和__exit__，使得
+        每一个cursor对象都能方便地关闭
+    """
     def __init__(self, cursor, db):
+        """
+        :params cursor: django.db.backends....的base.py下的CursorWrapper对象
+        :params db: DatabaseWrapper对象
+        """
         self.cursor = cursor
         self.db = db
 
     WRAP_ERROR_ATTRS = frozenset(['fetchone', 'fetchmany', 'fetchall', 'nextset'])
 
     def __getattr__(self, attr):
+        """对于当前CursorWrapper中找不到的属性，仍然需要去之前的CursorWrapper中找"""
         cursor_attr = getattr(self.cursor, attr)
         if attr in CursorWrapper.WRAP_ERROR_ATTRS:
             return self.db.wrap_database_errors(cursor_attr)

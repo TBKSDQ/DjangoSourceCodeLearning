@@ -65,9 +65,16 @@ class CursorWrapper:
     )
 
     def __init__(self, cursor):
+        """
+        :params cursor: mysqlclient模块创建的cursor对象
+        """
         self.cursor = cursor
 
     def execute(self, query, args=None):
+        """
+            当外部调用cursor.execute方法时，实际上最终还是通过当前类的execute来操作
+            mysqlcient中cursor的execute方法，只是对一些异常进行了处理
+        """
         try:
             # args is None means no string interpolation
             return self.cursor.execute(query, args)
@@ -89,6 +96,10 @@ class CursorWrapper:
             raise
 
     def __getattr__(self, attr):
+        """
+        当前类只写了一些与mysqlcient中cursor所拥有的同名方法，剩余方法仍然需要到
+        cursor中查找
+        """
         return getattr(self.cursor, attr)
 
     def __iter__(self):
@@ -193,6 +204,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
     validation_class = DatabaseValidation
 
     def get_connection_params(self):
+        """设置连接参数"""
         kwargs = {
             'conv': django_conversions,
             'charset': 'utf8',
@@ -231,6 +243,7 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     @async_unsafe
     def get_new_connection(self, conn_params):
+        # 调用mysqlclient(也就是MYSQLdb模块)中的connect方法来出啊关键连接
         connection = Database.connect(**conn_params)
         # bytes encoder in mysqlclient doesn't work and was added only to
         # prevent KeyErrors in Django < 2.0. We can remove this workaround when
@@ -258,7 +271,9 @@ class DatabaseWrapper(BaseDatabaseWrapper):
 
     @async_unsafe
     def create_cursor(self, name=None):
+        # 通过mysqlclient来创建cursor
         cursor = self.connection.cursor()
+        # 将cursor进行封装
         return CursorWrapper(cursor)
 
     def _rollback(self):

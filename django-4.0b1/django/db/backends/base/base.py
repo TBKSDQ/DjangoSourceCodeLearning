@@ -59,6 +59,7 @@ class BaseDatabaseWrapper:
     def __init__(self, settings_dict, alias=DEFAULT_DB_ALIAS):
         # Connection related attributes.
         # The underlying database connection.
+        # 默认connecton为空
         self.connection = None
         # `settings_dict` should be a dictionary containing keys such as
         # NAME, USER, etc. It's called `settings_dict` instead of `settings`
@@ -194,8 +195,12 @@ class BaseDatabaseWrapper:
 
     @async_unsafe
     def connect(self):
-        """Connect to the database. Assume that the connection is closed."""
+        """
+        Connect to the database. Assume that the connection is closed.
+        连接到数据库
+        """
         # Check for invalid configurations.
+        # 检查settings中时区相关的配置信息
         self.check_settings()
         # In case the previous connection was closed while in an atomic block
         self.in_atomic_block = False
@@ -207,7 +212,9 @@ class BaseDatabaseWrapper:
         self.closed_in_transaction = False
         self.errors_occurred = False
         # Establish the connection
+        # 获取连接参数(get_connection_params方法由子类实现)
         conn_params = self.get_connection_params()
+        # 创建连接
         self.connection = self.get_new_connection(conn_params)
         self.set_autocommit(self.settings_dict['AUTOCOMMIT'])
         self.init_connection_state()
@@ -216,6 +223,7 @@ class BaseDatabaseWrapper:
         self.run_on_commit = []
 
     def check_settings(self):
+        # 检查settings.py中的TIME_ZONE和USE_TZ，当USE_TZ为True时，TIME_ZONE应为空
         if self.settings_dict['TIME_ZONE'] is not None and not settings.USE_TZ:
             raise ImproperlyConfigured(
                 "Connection '%s' cannot set TIME_ZONE because USE_TZ is False."
@@ -225,8 +233,11 @@ class BaseDatabaseWrapper:
     @async_unsafe
     def ensure_connection(self):
         """Guarantee that a connection to the database is established."""
+        # 在首次调用该方法时，self.connection必定为空(因为在__init__方法里面初始化为None)
         if self.connection is None:
+            # 通过调用self.wrap_database_errors来对执行connect可能出现的异常进行处理
             with self.wrap_database_errors:
+                # 执行self.connect方法后，self.connection属性不再为空
                 self.connect()
 
     # ##### Backend-specific wrappers for PEP-249 connection methods #####
@@ -236,15 +247,21 @@ class BaseDatabaseWrapper:
         Validate the connection is usable and perform database cursor wrapping.
         """
         self.validate_thread_sharing()
+        # 将CursorWrapper对象传入
         if self.queries_logged:
             wrapped_cursor = self.make_debug_cursor(cursor)
         else:
             wrapped_cursor = self.make_cursor(cursor)
+        # 返回django.db.utils下的CursorWrapper(如果是Debug则是CursorDebugWrapper)
+        # 最终返回的wrapped_cursor经过了两层CursorWrapper的包裹
         return wrapped_cursor
 
     def _cursor(self, name=None):
+        # ensure_connection确保已经连接上数据库了
         self.ensure_connection()
         with self.wrap_database_errors:
+            # 通过create_cursor方法来创建cursor，返回django.db.backends....的base.py下的CursorWrapper对象
+            # 最终返回的cursor是经过django包装后的cursor，不过实质上调用时大部分方法仍然依赖于myqlclient
             return self._prepare_cursor(self.create_cursor(name))
 
     def _commit(self):
@@ -266,7 +283,10 @@ class BaseDatabaseWrapper:
 
     @async_unsafe
     def cursor(self):
-        """Create a cursor, opening a connection if necessary."""
+        """
+        Create a cursor, opening a connection if necessary.
+        通过self._cursro方法来创建cursor
+        """
         return self._cursor()
 
     @async_unsafe
@@ -582,6 +602,7 @@ class BaseDatabaseWrapper:
         """
         Context manager and decorator that re-throws backend-specific database
         exceptions using Django's common wrappers.
+        主要的作用是对with内部的语句进行异常处理
         """
         return DatabaseErrorWrapper(self)
 
@@ -597,7 +618,11 @@ class BaseDatabaseWrapper:
         return utils.CursorDebugWrapper(cursor, self)
 
     def make_cursor(self, cursor):
-        """Create a cursor without debug logging."""
+        """
+        :params cursor: django.db.backends....的base.py下的CursorWrapper对象
+        Create a cursor without debug logging.
+        """
+        # 再一次对CursorWrapper对象封装一层utisl下的CursorWrapper
         return utils.CursorWrapper(cursor, self)
 
     @contextmanager

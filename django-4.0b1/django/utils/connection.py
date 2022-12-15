@@ -74,6 +74,7 @@ class BaseConnectionHandler:
         return settings
 
     def create_connection(self, alias):
+        """由继承了BaseConnectionHandler的子类来实现该方法"""
         raise NotImplementedError('Subclasses must implement create_connection().')
 
     def __getitem__(self, alias):

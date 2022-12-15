@@ -53,10 +53,12 @@ class DatabaseErrorWrapper:
     """
     Context manager and decorator that reraises backend-specific database
     exceptions using Django's common wrappers.
+    主要的作用是对with内部的语句进行异常处理
     """
 
     def __init__(self, wrapper):
         """
+        :params wrapper: DatabaseWrapper对象(与mysql相关的DatabaseWrapper位于django.db.backends.mysq.base中)
         wrapper is a database wrapper.
 
         It must have a Database attribute defining PEP-249 exceptions.
@@ -64,11 +66,17 @@ class DatabaseErrorWrapper:
         self.wrapper = wrapper
 
     def __enter__(self):
+        # 使用with时，不会返回任何内容
         pass
 
     def __exit__(self, exc_type, exc_value, traceback):
+        """
+            __exit__方法会在with内部语句执行完成后或者执行过程中遇到异常时执行。
+        """
+        # 判断是否出现了异常，没有则直接返回
         if exc_type is None:
             return
+        # 这些异常都在上面定义了
         for dj_exc_type in (
                 DataError,
                 OperationalError,
@@ -80,7 +88,9 @@ class DatabaseErrorWrapper:
                 InterfaceError,
                 Error,
         ):
+            # 查找Database(该Database为mysqlclient模块)中有没有与上面遍历的异常类相同名字的属性
             db_exc_type = getattr(self.wrapper.Database, dj_exc_type.__name__)
+            # 判断抛出的异常是否是当前遍历的异常类子类
             if issubclass(exc_type, db_exc_type):
                 dj_exc_value = dj_exc_type(*exc_value.args)
                 # Only set the 'errors_occurred' flag for errors that may make
