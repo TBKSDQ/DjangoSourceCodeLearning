@@ -50,7 +50,7 @@ class BaseDatabaseWrapper:
     client_class = None
     creation_class = None
     features_class = None
-    introspection_class = None
+    introspection_class = None  # 该属性会在子类中指定
     ops_class = None
     validation_class = BaseDatabaseValidation
 
@@ -116,6 +116,7 @@ class BaseDatabaseWrapper:
         self.creation = self.creation_class(self)
         self.features = self.features_class(self)
         self.introspection = self.introspection_class(self)
+        # 设置self.ops的值为类属性ops_class的值(具体值由子类指定)
         self.ops = self.ops_class(self)
         self.validation = self.validation_class(self)
 

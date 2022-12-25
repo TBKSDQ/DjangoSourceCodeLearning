@@ -328,9 +328,12 @@ class BaseDatabaseOperations:
         Return the SQLCompiler class corresponding to the given name,
         in the namespace corresponding to the `compiler_module` attribute
         on this backend.
+        在当前的compiler_module中找到与传入的compiler_name相同名字的类后返回。
         """
         if self._cache is None:
+            # 尝试导入compiler_module模块
             self._cache = import_module(self.compiler_module)
+        # 查找模块中对应的类
         return getattr(self._cache, compiler_name)
 
     def quote_name(self, name):

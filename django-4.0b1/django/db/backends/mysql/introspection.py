@@ -18,6 +18,7 @@ InfoLine = namedtuple(
 
 
 class DatabaseIntrospection(BaseDatabaseIntrospection):
+    # mysqliclient中的字段类型与django中字段类型的对应
     data_types_reverse = {
         FIELD_TYPE.BLOB: 'TextField',
         FIELD_TYPE.CHAR: 'CharField',

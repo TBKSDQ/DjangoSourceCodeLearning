@@ -30,6 +30,8 @@ class BaseDatabaseIntrospection:
 
     def identifier_converter(self, name):
         """
+        对标识符进行转换，当前方法会直接返回原本的值。该方法目前应该是用于大小写敏感的
+        情况，对于传入的内容不会进行转换。子类中可以根据不同情况再进行实现。
         Apply a conversion to the identifier for the purposes of comparison.
 
         The default identifier converter is for case sensitive comparison.

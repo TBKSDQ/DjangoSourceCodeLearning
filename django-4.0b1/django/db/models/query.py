@@ -1450,16 +1450,25 @@ class RawQuerySet:
     """
     Provide an iterator which converts the results of raw SQL queries into
     annotated model instances.
+    提供一个迭代器，该迭代器将sql查询结果转为了模型类实例
     """
     def __init__(self, raw_query, model=None, query=None, params=(),
                  translations=None, using=None, hints=None):
+        """
+        :params raw_query: sql语句
+        :params model: 模型类
+        :params query: RawQuery
+        :params using: 数据库配置信息别名
+        """
         self.raw_query = raw_query
         self.model = model
         self._db = using
         self._hints = hints or {}
+        # 如果外部没有传入query参数，那么会直接实例化一个RawQuery对象
         self.query = query or sql.RawQuery(sql=raw_query, using=self.db, params=params)
         self.params = params
         self.translations = translations or {}
+        # 保存查询结果
         self._result_cache = None
         self._prefetch_related_lookups = ()
         self._prefetch_done = False
@@ -1467,10 +1476,13 @@ class RawQuerySet:
     def resolve_model_init_order(self):
         """Resolve the init field names and value positions."""
         converter = connections[self.db].introspection.identifier_converter
+        # 得到模型类中所有的字段
         model_init_fields = [f for f in self.model._meta.fields if converter(f.column) in self.columns]
         annotation_fields = [(column, pos) for pos, column in enumerate(self.columns)
                              if column not in self.model_fields]
+        # 得到字段名在columns中的索引位置
         model_init_order = [self.columns.index(converter(f.column)) for f in model_init_fields]
+        # 获取字段的名称
         model_init_names = [f.attname for f in model_init_fields]
         return model_init_names, model_init_order, annotation_fields
 
@@ -1497,6 +1509,10 @@ class RawQuerySet:
         return c
 
     def _fetch_all(self):
+        """
+        查询所有数据
+        """
+        # 如果已经查询过一次了，那么再执行当前方法时不会再进行查询
         if self._result_cache is None:
             self._result_cache = list(self.iterator())
         if self._prefetch_related_lookups and not self._prefetch_done:
@@ -1511,38 +1527,54 @@ class RawQuerySet:
         return bool(self._result_cache)
 
     def __iter__(self):
+        # 查询所有数据，_fetch_all会将数据缓存到_result_cache中，最终返回一个可以获取数据的迭代器
         self._fetch_all()
         return iter(self._result_cache)
 
     def iterator(self):
+        """
+        该方法的作用是将查询到的数据用于实例化模型类。
+        返回一个生成器(当python检测到方法中使用了yield关键字时，返回生成器，此时并不会立即执行，除非使用next()等方式来执行)
+        """
         # Cache some things for performance reasons outside the loop.
-        db = self.db
+        # 出于性能原因，在循环外部缓存某些数据
+        db = self.db  # 数据库配置信息别名
+        # 获取数据库编译器
         compiler = connections[db].ops.compiler('SQLCompiler')(
             self.query, connections[db], db
         )
 
+        # self.query为RawQuery对象，当使用iter(self.query)时，可以得到一个迭代器(用于数据迭代)
+        # 此时查询了数据
         query = iter(self.query)
 
         try:
+            # 得到模型类字段名及其在self.columns中的索引位置
             model_init_names, model_init_pos, annotation_fields = self.resolve_model_init_order()
             if self.model._meta.pk.attname not in model_init_names:
                 raise exceptions.FieldDoesNotExist(
                     'Raw query must include the primary key'
                 )
-            model_cls = self.model
+            model_cls = self.model  # 本次查询相关的模型类
+            # 获得模型类中的字段
             fields = [self.model_fields.get(c) for c in self.columns]
             converters = compiler.get_converters([
                 f.get_col(f.model._meta.db_table) if f else None for f in fields
             ])
             if converters:
+                # 此时query为一个生成器
                 query = compiler.apply_converters(query, converters)
+            # 遍历生成器，得到之前从数据库中查询的数据
             for values in query:
                 # Associate fields to values
+                # 将model_init_pos中记录的字段索引位置用于获取数据，猜测是将数据按照字段顺序来保存
                 model_init_values = [values[pos] for pos in model_init_pos]
+                # 将数据用于生成模型类实例
                 instance = model_cls.from_db(db, model_init_names, model_init_values)
                 if annotation_fields:
                     for column, pos in annotation_fields:
                         setattr(instance, column, values[pos])
+                # 通过yield返回模型类实例
                 yield instance
         finally:
             # Done iterating the Query. If it has its own cursor, close it.
@@ -1556,8 +1588,11 @@ class RawQuerySet:
         return list(self)[k]
 
     @property
-    def db(self):
-        """Return the database used if this query is executed now."""
+    def db(self) -> str:
+        """
+        Return the database used if this query is executed now.
+        返回当前查询时所用的数据库
+        """
         return self._db or router.db_for_read(self.model, **self._hints)
 
     def using(self, alias):
@@ -1574,7 +1609,9 @@ class RawQuerySet:
         """
         A list of model field names in the order they'll appear in the
         query results.
+        返回一个列表，列表中包含模型类字段名
         """
+        # 从数据库中查询到表的列名
         columns = self.query.get_columns()
         # Adjust any column names which don't match field names
         for (query_name, model_name) in self.translations.items():
@@ -1589,7 +1626,10 @@ class RawQuerySet:
 
     @cached_property
     def model_fields(self):
-        """A dict mapping column names to model field names."""
+        """
+        A dict mapping column names to model field names.
+        返回一个字典，字典中的key为模型类中的字段名，value为字段对象
+        """
         converter = connections[self.db].introspection.identifier_converter
         model_fields = {}
         for field in self.model._meta.fields:

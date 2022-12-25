@@ -66,10 +66,10 @@ class RawQuery:
     """A single raw SQL query."""
 
     def __init__(self, sql, using, params=()):
-        self.params = params
-        self.sql = sql
-        self.using = using
-        self.cursor = None
+        self.params = params  # sql语句的参数
+        self.sql = sql  # sql语句
+        self.using = using  # 使用的数据库配置信息的名称
+        self.cursor = None  # CursorWrapper
 
         # Mirror some properties of a normal query so that
         # the compiler can be used to process results.
@@ -77,6 +77,8 @@ class RawQuery:
         self.extra_select = {}
         self.annotation_select = {}
 
+    # chain和clone方法的作用是重新创建一个RawQuery对象，然后将之前的一些参数保留下来
+    # STODO: 后期完善
     def chain(self, using):
         return self.clone(using)
 
@@ -84,21 +86,33 @@ class RawQuery:
         return RawQuery(self.sql, using, params=self.params)
 
     def get_columns(self):
+        """
+        获取所查询的表的列名
+        """
+        # 检查当前是否已经获取到了cursor，没有则通过下面的方法来获取
         if self.cursor is None:
+            # 调用该方法后，sql已经执行完成
             self._execute_query()
+        # 获取转换器(当前针对于mysql的DatabaseIntrospection没有重写该方法，所以并不会实际对传入的内容进行转换)
         converter = connections[self.using].introspection.identifier_converter
+        # description必须要在执行了sql语句后才会有内容(可以使用cursor.execute()来执行sql)
+        # 返回的结果是元组包裹多个元组，元组第一个元素就是列名
         return [converter(column_meta[0])
                 for column_meta in self.cursor.description]
 
     def __iter__(self):
         # Always execute a new query for a new iterator.
         # This could be optimized with a cache at the expense of RAM.
+        # 执行sql语句
         self._execute_query()
         if not connections[self.using].features.can_use_chunked_reads:
             # If the database can't use chunked reads we need to make sure we
             # evaluate the entire query up front.
+            # 如果数据库不能分块读取，那么需要先评估整个查询
+            # 实际上这里好像就是打算一次性获取所有数据
             result = list(self.cursor)
         else:
+            # 返回执行了查询后的cursor
             result = self.cursor
         return iter(result)
 
@@ -117,6 +131,10 @@ class RawQuery:
         return self.sql % self.params_type(self.params)
 
     def _execute_query(self):
+        """
+        执行sql语句并返回设置self.cursor
+        """
+        # 通过传入的数据库配置信息名来获取对应的连接对象
         connection = connections[self.using]
 
         # Adapt parameters to the database, as much as possible considering
@@ -132,7 +150,9 @@ class RawQuery:
         else:
             raise RuntimeError("Unexpected params type: %s" % params_type)
 
+        # 获取cursor
         self.cursor = connection.cursor()
+        # 执行sql
         self.cursor.execute(self.sql, params)
 
 
@@ -258,6 +278,7 @@ class Query(BaseExpression):
         Parameter values won't necessarily be quoted correctly, since that is
         done by the database interface at execution time.
         """
+        # 输出sql语句(有参数时会输出参数)
         sql, params = self.sql_with_params()
         return sql % params
 
@@ -265,7 +286,9 @@ class Query(BaseExpression):
         """
         Return the query as an SQL string and the parameters that will be
         substituted into the query.
+        返回查询字符串
         """
+        # DEFAULT_DB_ALIAS默认值为'default'
         return self.get_compiler(DEFAULT_DB_ALIAS).as_sql()
 
     def __deepcopy__(self, memo):
@@ -275,10 +298,19 @@ class Query(BaseExpression):
         return result
 
     def get_compiler(self, using=None, connection=None, elide_empty=True):
+        """
+        获取sql编译器。该编译器可以将django中的数据库查询信息转为sql语句。
+        :params using: 数据库配置信息的名称
+        :params connection: DatabaseWrapper
+        """
+        # 至少要保证using或者connection参数不为空，否则会抛出异常
         if using is None and connection is None:
             raise ValueError("Need either using or connection")
+        # 如果有传递using，那么直接获取对应的conenction
         if using:
             connection = connections[using]
+        # ops为DatabaseOperations实例，ops.compiler函数返回一个与传入参数值相同名字的类
+        # 然后再将创建对应的实例对象
         return connection.ops.compiler(self.compiler)(self, connection, using, elide_empty)
 
     def get_meta(self):
@@ -286,6 +318,7 @@ class Query(BaseExpression):
         Return the Options instance (the model._meta) from which to start
         processing. Normally, this is self.model._meta, but it can be changed
         by subclasses.
+        返回一个Options实例，通过该实例就可以获取到模型类中Meta的数据
         """
         return self.model._meta
 
@@ -293,6 +326,8 @@ class Query(BaseExpression):
         """
         Return a copy of the current Query. A lightweight alternative to
         to deepcopy().
+        复制当前的Query对象。该方法相当于一个轻量级的deepcopy()，只复制一些必须的
+        属性
         """
         obj = Empty()
         obj.__class__ = self.__class__
