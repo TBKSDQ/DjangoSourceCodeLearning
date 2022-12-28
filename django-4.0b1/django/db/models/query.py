@@ -34,26 +34,35 @@ REPR_OUTPUT_SIZE = 20
 
 class BaseIterable:
     def __init__(self, queryset, chunked_fetch=False, chunk_size=GET_ITERATOR_CHUNK_SIZE):
+        """
+        :params queryset: QuerySet实例
+        """
         self.queryset = queryset
         self.chunked_fetch = chunked_fetch
         self.chunk_size = chunk_size
 
 
 class ModelIterable(BaseIterable):
-    """Iterable that yields a model instance for each row."""
+    """
+    Iterable that yields a model instance for each row.
+    该迭代器会为每一行数据返回一个模型实例
+    """
 
     def __iter__(self):
-        queryset = self.queryset
+        queryset = self.queryset  # QuerySet实例
         db = queryset.db
-        compiler = queryset.query.get_compiler(using=db)
+        compiler = queryset.query.get_compiler(using=db)  # sql编译器
         # Execute the query. This will also fill compiler.select, klass_info,
         # and annotations.
+        # 通过compiler执行sql(sql由compiler内部进行获取)
         results = compiler.execute_sql(chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size)
+        # 从compiler中获得要查询的字段、模型类信息、聚合
         select, klass_info, annotation_col_map = (compiler.select, compiler.klass_info,
                                                   compiler.annotation_col_map)
         model_cls = klass_info['model']
         select_fields = klass_info['select_fields']
         model_fields_start, model_fields_end = select_fields[0], select_fields[-1] + 1
+        # 获得要查询的字段的名称
         init_list = [f[0].target.attname
                      for f in select[model_fields_start:model_fields_end]]
         related_populators = get_related_populators(klass_info, select, db)
@@ -65,7 +74,9 @@ class ModelIterable(BaseIterable):
                 for from_field in field.from_fields
             ])) for field, related_objs in queryset._known_related_objects.items()
         ]
+        # 遍历查询到的数据
         for row in compiler.results_iter(results):
+            # 将数据用于生成模型类实例
             obj = model_cls.from_db(db, init_list, row[model_fields_start:model_fields_end])
             for rel_populator in related_populators:
                 rel_populator.populate(row, obj)
@@ -85,7 +96,7 @@ class ModelIterable(BaseIterable):
                     pass  # May happen in qs1 | qs2 scenarios.
                 else:
                     setattr(obj, field.name, rel_obj)
-
+            # 返回模型类实例
             yield obj
 
 
@@ -176,6 +187,10 @@ class QuerySet:
     """Represent a lazy database lookup for a set of objects."""
 
     def __init__(self, model=None, query=None, using=None, hints=None):
+        """
+        :params model: 模型类
+        :params using: 数据库配置信息别名
+        """
         self.model = model
         self._db = using
         self._hints = hints or {}
@@ -186,6 +201,7 @@ class QuerySet:
         self._prefetch_related_lookups = ()
         self._prefetch_done = False
         self._known_related_objects = {}  # {rel_field: {pk: rel_obj}}
+        # _iterable_class为一个可用于迭代的类，迭代时会返回查询到的数据
         self._iterable_class = ModelIterable
         self._fields = None
         self._defer_next_filter = False
@@ -193,6 +209,10 @@ class QuerySet:
 
     @property
     def query(self):
+        """
+        返回一个Query对象
+        """
+        # 检查延迟过滤器
         if self._deferred_filter:
             negate, args, kwargs = self._deferred_filter
             self._filter_or_exclude_inplace(negate, args, kwargs)
@@ -253,12 +273,17 @@ class QuerySet:
         self.__dict__.update(state)
 
     def __repr__(self):
+        """
+        __repr__返回的内容就是在命令行中输出的内容
+        当前方法会查询所有数据并返回部分信息
+        """
         data = list(self[:REPR_OUTPUT_SIZE + 1])
         if len(data) > REPR_OUTPUT_SIZE:
             data[-1] = "...(remaining elements truncated)..."
         return '<%s %r>' % (self.__class__.__name__, data)
 
     def __len__(self):
+        # 先进行数据的查询，然后再统计_result_cache中数据的数量
         self._fetch_all()
         return len(self._result_cache)
 
@@ -285,12 +310,17 @@ class QuerySet:
         return bool(self._result_cache)
 
     def __getitem__(self, k):
-        """Retrieve an item or slice from the set of results."""
+        """
+        Retrieve an item or slice from the set of results.
+        使得当前queryset对象能够被切片或者是能够通过索引获取数据
+        """
+        # 判断传入的k是否是int类型或者slice类型(1:2这样的为slice类型)
         if not isinstance(k, (int, slice)):
             raise TypeError(
                 'QuerySet indices must be integers or slices, not %s.'
                 % type(k).__name__
             )
+        # 索引和slice的边界判断(queryset的索引和切片不支持负数)
         if (
             (isinstance(k, int) and k < 0) or
             (isinstance(k, slice) and (
@@ -300,10 +330,12 @@ class QuerySet:
         ):
             raise ValueError('Negative indexing is not supported.')
 
+        # 如果_result_cache中有数据，那么直接从其中获得数据返回
         if self._result_cache is not None:
             return self._result_cache[k]
 
         if isinstance(k, slice):
+            # 获得当前对象的副本
             qs = self._chain()
             if k.start is not None:
                 start = int(k.start)
@@ -313,9 +345,13 @@ class QuerySet:
                 stop = int(k.stop)
             else:
                 stop = None
+            # 设置查询数量限制(相当于sql语句中的limit)
             qs.query.set_limits(start, stop)
+            # list(qs)会调用__iter__方法
+            # 不再进行切片，因为上面已经设置了limit，在进行数据库查询时就已经完成了切片
             return list(qs)[::k.step] if k.step else qs
 
+        # 传入的k为int时，代表只取一条数据
         qs = self._chain()
         qs.query.set_limits(k, k + 1)
         qs._fetch_all()
@@ -969,6 +1005,7 @@ class QuerySet:
         """
         Return a new QuerySet instance with the args ANDed to the existing
         set.
+        返回一个新的QuerySet实例，该实例中会包含着之前QuerySet实例已有的参数
         """
         self._not_support_combined_queries('filter')
         return self._filter_or_exclude(False, args, kwargs)
@@ -982,8 +1019,12 @@ class QuerySet:
         return self._filter_or_exclude(True, args, kwargs)
 
     def _filter_or_exclude(self, negate, args, kwargs):
+        # 判断queryset对象是否已经切片过了，如果已经切片，那么不再允许继续调用带有过滤条件的filter方法
+        # 比如Books.objects.all()[0:2].filter(xxx=xxx)，这样的操作是不被允许的，
+        # Books.objects.all()[0:2].filter()，由于filter没有参数时相当于没有过滤，所以这样是可以执行的
         if (args or kwargs) and self.query.is_sliced:
             raise TypeError('Cannot filter a query once a slice has been taken.')
+        # 克隆当前的QuerySet实例
         clone = self._chain()
         if self._defer_next_filter:
             self._defer_next_filter = False
@@ -993,6 +1034,8 @@ class QuerySet:
         return clone
 
     def _filter_or_exclude_inplace(self, negate, args, kwargs):
+        # 最终是在query对象中添加q(也就是添加Q查询对象)
+        # 实际修改的是query对象中的数据，相当于修改查询条件
         if negate:
             self._query.add_q(~Q(*args, **kwargs))
         else:
@@ -1328,6 +1371,7 @@ class QuerySet:
         """
         Return a copy of the current QuerySet that's ready for another
         operation.
+        返回当前queryset对象的副本用于其他的操作
         """
         obj = self._clone()
         if obj._sticky_filter:
@@ -1339,6 +1383,7 @@ class QuerySet:
         """
         Return a copy of the current QuerySet. A lightweight alternative
         to deepcopy().
+        返回当前queryset对象的副本
         """
         c = self.__class__(model=self.model, query=self.query.chain(), using=self._db, hints=self._hints)
         c._sticky_filter = self._sticky_filter
@@ -1350,6 +1395,11 @@ class QuerySet:
         return c
 
     def _fetch_all(self):
+        """
+        查询数据
+        """
+        # 判断_result_cache是否为空，如果不为空，代表着已经查询过数据了
+        # 如果为空，代表着需要先进行数据的查询，查询后将数据缓存到_result_cache中
         if self._result_cache is None:
             self._result_cache = list(self._iterable_class(self))
         if self._prefetch_related_lookups and not self._prefetch_done:

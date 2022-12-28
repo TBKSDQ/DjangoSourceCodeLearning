@@ -1858,9 +1858,12 @@ class Query(BaseExpression):
         Adjust the limits on the rows retrieved. Use low/high to set these,
         as it makes it more Pythonic to read and write. When the SQL query is
         created, convert them to the appropriate offset and limit values.
+        调整行数据的数量限制。使用low/high来控制，当sql查询创建时，会将low/high转为
+        sql中对应的limit和offset。
 
         Apply any limits passed in here to the existing constraints. Add low
         to the current low value and clamp both to any existing high value.
+        对于传过来的数量限制会在原本的low和high的值上进行计算
         """
         if high is not None:
             if self.high_mark is not None:

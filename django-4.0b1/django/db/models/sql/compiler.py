@@ -1152,7 +1152,11 @@ class SQLCompiler:
 
     def results_iter(self, results=None, tuple_expected=False, chunked_fetch=False,
                      chunk_size=GET_ITERATOR_CHUNK_SIZE):
-        """Return an iterator over the results from executing this query."""
+        """
+        Return an iterator over the results from executing this query.
+        该方法可以返回一个包含结果的迭代器。如果没有传入results，那么会先进行数据的查询。
+        猜测该方法的作用是将查询后的结果做一定的转换再进行返回。
+        """
         if results is None:
             results = self.execute_sql(MULTI, chunked_fetch=chunked_fetch, chunk_size=chunk_size)
         fields = [s[0] for s in self.select[0:self.col_count]]
@@ -1176,6 +1180,8 @@ class SQLCompiler:
         Run the query against the database and return the result(s). The
         return value is a single data item if result_type is SINGLE, or an
         iterator over the results if the result_type is MULTI.
+        执行sql语句并返回结果。如果result_type=SINGLE，那么返回单个数据。如果result_type=MULTI，
+        返回一个生成器。
 
         result_type is either MULTI (use fetchmany() to retrieve all rows),
         SINGLE (only retrieve a single row), or None. In this last case, the
@@ -1186,19 +1192,24 @@ class SQLCompiler:
         """
         result_type = result_type or NO_RESULTS
         try:
+            # 获得sql语句以及参数(通过Query对象来获取)
             sql, params = self.as_sql()
+            # 如果没有获取到sql语句，抛出异常
             if not sql:
                 raise EmptyResultSet
+        # 捕获上面抛出的异常，如果要返回的类型为MULTI，那么返回一个空列表，否则返回None
         except EmptyResultSet:
             if result_type == MULTI:
                 return iter([])
             else:
                 return
+        # 根据不同情况来获得不同的cursor
         if chunked_fetch:
             cursor = self.connection.chunked_cursor()
         else:
             cursor = self.connection.cursor()
         try:
+            # 通过cursor执行sql语句
             cursor.execute(sql, params)
         except Exception:
             # Might fail for server-side cursors (e.g. connection closed)
@@ -1232,6 +1243,7 @@ class SQLCompiler:
             # before going any further. Use chunked_fetch if requested,
             # unless the database doesn't support it.
             return list(result)
+        # 返回查询结果
         return result
 
     def as_subquery_condition(self, alias, columns, compiler):
