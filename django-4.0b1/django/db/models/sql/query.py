@@ -1893,8 +1893,10 @@ class Query(BaseExpression):
     def can_filter(self):
         """
         Return True if adding filters to this instance is still possible.
+        如果当前还能够添加筛选条件，那么返回True
 
         Typically, this means no limits or offsets have been put on the results.
+        通常来说，返回True意味着sql语句中没有limit或者offset(对应到queryset中就是没有进行切片操作)
         """
         return not self.is_sliced
 
@@ -1934,6 +1936,7 @@ class Query(BaseExpression):
         """
         Add the given (model) fields to the select set. Add the field names in
         the order specified.
+        将给定的字段到select集合中(该select集合为sql查询时的字段)
         """
         alias = self.get_initial_alias()
         opts = self.get_meta()
@@ -2211,6 +2214,8 @@ class Query(BaseExpression):
             field_names = []
             extra_names = []
             annotation_names = []
+            # 如果当前query类中没有设置extra和annotations
+            # 那么直接将传入的fields复制给fields_names
             if not self.extra and not self.annotations:
                 # Shortcut - if there are no extra or annotations, then
                 # the values() clause must be just field names.
@@ -2248,7 +2253,9 @@ class Query(BaseExpression):
                 group_by.append(expr)
             self.group_by = tuple(group_by)
 
+        # 设置values_select属性
         self.values_select = tuple(field_names)
+        # 将fields_names中的值设置为查询的字段
         self.add_fields(field_names, True)
 
     @property

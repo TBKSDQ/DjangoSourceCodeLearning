@@ -29,6 +29,8 @@ def resolve_callables(mapping):
     """
     Generate key/value pairs for the given mapping where the values are
     evaluated if they're callable.
+    根据传入的映射对象来返回键值对(以生成器的形式)，如果键值对中的value
+    为可执行对象，那么执行后再将结果返回
     """
     for k, v in mapping.items():
         yield k, v() if callable(v) else v

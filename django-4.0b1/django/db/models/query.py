@@ -103,6 +103,7 @@ class ModelIterable(BaseIterable):
 class ValuesIterable(BaseIterable):
     """
     Iterable returned by QuerySet.values() that yields a dict for each row.
+    该迭代器会在queryset调用values方法时使用，迭代器以字典格式返回每一条数据
     """
 
     def __iter__(self):
@@ -111,13 +112,17 @@ class ValuesIterable(BaseIterable):
         compiler = query.get_compiler(queryset.db)
 
         # extra(select=...) cols are always at the start of the row.
+        # 将各个种类的查询字段放到names列表中
         names = [
             *query.extra_select,
             *query.values_select,
             *query.annotation_select,
         ]
+        # 根据names的长度得到一个range迭代器
         indexes = range(len(names))
+        # 通过compiler来获取数据
         for row in compiler.results_iter(chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size):
+            # 返回查询到的数据，将数据与names中的字段进行关联
             yield {names[i]: row[i] for i in indexes}
 
 
@@ -125,6 +130,7 @@ class ValuesListIterable(BaseIterable):
     """
     Iterable returned by QuerySet.values_list(flat=False) that yields a tuple
     for each row.
+    当调用queryset的values_list并且flat参数为False时，以元组格式返回每一条数据
     """
 
     def __iter__(self):
@@ -148,6 +154,7 @@ class ValuesListIterable(BaseIterable):
                     rowfactory,
                     compiler.results_iter(chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size)
                 )
+        # 这里的tuple_expected就是代表着希望返回元组格式的数据
         return compiler.results_iter(tuple_expected=True, chunked_fetch=self.chunked_fetch, chunk_size=self.chunk_size)
 
 
@@ -442,9 +449,12 @@ class QuerySet:
         """
         Perform a SELECT COUNT() and return the number of records as an
         integer.
+        执行select count()查询语句，返回数据的数量
 
         If the QuerySet is already fully cached, return the length of the
         cached results set to avoid multiple SELECT COUNT(*) calls.
+        如果queryset已经对数据进行了缓存，那么直接对缓存的数据进行数量统计，
+        避免多次调用select count(*)
         """
         if self._result_cache is not None:
             return len(self._result_cache)
@@ -455,27 +465,34 @@ class QuerySet:
         """
         Perform the query and return a single object matching the given
         keyword arguments.
+        根据给定的参数来查询数据，返回单个对象
         """
+        # combinator不为空并且get方法有传入过滤参数时，会抛出异常
         if self.query.combinator and (args or kwargs):
             raise NotSupportedError(
                 'Calling QuerySet.get(...) with filters after %s() is not '
                 'supported.' % self.query.combinator
             )
         clone = self._chain() if self.query.combinator else self.filter(*args, **kwargs)
+        # can_filter用于判断是否能够添加筛选条件，distinct_fields应该是去重字段
         if self.query.can_filter() and not self.query.distinct_fields:
             clone = clone.order_by()
         limit = None
         if not clone.query.select_for_update or connections[clone.db].features.supports_select_for_update_with_limit:
             limit = MAX_GET_RESULTS
             clone.query.set_limits(high=limit)
+        # 当上面的过滤条件处理完后，通过len来调用queryset中的__len__，从而进行数据的查询
         num = len(clone)
+        # 如果查询出来的结果只有一条，那么直接返回
         if num == 1:
             return clone._result_cache[0]
+        # 没有结果则抛出DoesNotExist的异常
         if not num:
             raise self.model.DoesNotExist(
                 "%s matching query does not exist." %
                 self.model._meta.object_name
             )
+        # 到了这里，代表着查询出来多条结果，同样抛出异常
         raise self.model.MultipleObjectsReturned(
             'get() returned more than one %s -- it returned %s!' % (
                 self.model._meta.object_name,
@@ -487,9 +504,11 @@ class QuerySet:
         """
         Create a new object with the given kwargs, saving it to the database
         and returning the created object.
+        根据传入的参数来创建一个新的模型类实例，并将其保存到数据库
         """
-        obj = self.model(**kwargs)
+        obj = self.model(**kwargs)  # self.model就是创建queryset时传入的模型类
         self._for_write = True
+        # 调用模型类中的save方法来保存
         obj.save(force_insert=True, using=self.db)
         return obj
 
@@ -614,19 +633,27 @@ class QuerySet:
     def get_or_create(self, defaults=None, **kwargs):
         """
         Look up an object with the given kwargs, creating one if necessary.
+        根据给定的参数来进行查询一个结果，没有查询到则进行创建
         Return a tuple of (object, created), where created is a boolean
         specifying whether an object was created.
+        返回一个类似于(object, created)的元组，created是一个布尔类型的值，代表
+        着返回的obejct是否为新创建的
         """
         # The get() needs to be targeted at the write database in order
         # to avoid potential transaction consistency problems.
         self._for_write = True
         try:
+            # 直接通过get方法来查询，如果查询到了则直接返回，并且created的值为False
             return self.get(**kwargs), False
+        # 捕获到异常就代表着没有查询到结果
         except self.model.DoesNotExist:
+            # 对参数进行处理(比如排除掉包含查询表达式的参数)
             params = self._extract_model_params(defaults, **kwargs)
             # Try to create an object using passed params.
+            # 调用queryset的create方法来进行保存
             try:
                 with transaction.atomic(using=self.db):
+                    # 获得处理后的参数
                     params = dict(resolve_callables(params))
                     return self.create(**params), True
             except IntegrityError:
@@ -648,37 +675,53 @@ class QuerySet:
         with transaction.atomic(using=self.db):
             # Lock the row so that a concurrent update is blocked until
             # update_or_create() has performed its save.
+            # 调用get_or_create，根据返回的created来判断是查询到的还是新创建的
             obj, created = self.select_for_update().get_or_create(defaults, **kwargs)
+            # 如果是新创建的，那么直接返回
             if created:
                 return obj, created
+            # 对参数进行处理(resolve_callables返回一个生成器)
             for k, v in resolve_callables(defaults):
+                # 将参数设置到obj对象当中
                 setattr(obj, k, v)
+            # 调用save方法来更新数据
             obj.save(using=self.db)
-        return obj, False
+        return obj, False  # 这里的False代表着该对象并不是新创建的
 
     def _extract_model_params(self, defaults, **kwargs):
         """
         Prepare `params` for creating a model instance based on the given
         kwargs; for use by get_or_create().
+        将传入的参数进行处理，用于创建模型类实例。该方法提供给get_or_create方法使用。
+
+        由于get_or_create有查询步骤，那么传入的参数就可能包含有查询表达式(例如__gt)，
+        那么需要将这些参数进行一定的处理，不能直接用于创建模型类实例。
         """
         defaults = defaults or {}
+        # 遍历传入的参数，检查key是否包含"__"字符串，过滤掉包含"__"字符串的key
         params = {k: v for k, v in kwargs.items() if LOOKUP_SEP not in k}
+        # 使用defaults来更新params字典
         params.update(defaults)
-        property_names = self.model._meta._property_names
+        property_names = self.model._meta._property_names  # _property_names为frozenset
         invalid_params = []
+        # 遍历所有参数
         for param in params:
+            # 检查参数名在模型类中是否有对应的字段，对于不存在的字段不会进行值的保存
             try:
                 self.model._meta.get_field(param)
             except exceptions.FieldDoesNotExist:
                 # It's okay to use a model's property if it has a setter.
+                # 统一将不存在于模型类中的参数名保存到invalid_params字典中
                 if not (param in property_names and getattr(self.model, param).fset):
                     invalid_params.append(param)
+        # 如果invalid_params不为空，那么抛出异常，提示有哪些参数是没有对应字段的
         if invalid_params:
             raise exceptions.FieldError(
                 "Invalid field name(s) for model %s: '%s'." % (
                     self.model._meta.object_name,
                     "', '".join(sorted(invalid_params)),
                 ))
+        # 没有异常抛出则返回处理好的参数
         return params
 
     def _earliest(self, *fields):
@@ -686,24 +729,31 @@ class QuerySet:
         Return the earliest object according to fields (if given) or by the
         model's Meta.get_latest_by.
         """
+        # 如果有传字段进来，那么根据这些字段进行排序后再返回最上方的那个数据
         if fields:
             order_by = fields
         else:
+            # 进入到这里，代表着外部调用_earliest方法时没有指定字段，那么就会去模型类的_meta中找get_latest_by对应的值
             order_by = getattr(self.model._meta, 'get_latest_by')
             if order_by and not isinstance(order_by, (tuple, list)):
                 order_by = (order_by,)
+        # order_by不能为空，否则抛出异常
         if order_by is None:
             raise ValueError(
                 "earliest() and latest() require either fields as positional "
                 "arguments or 'get_latest_by' in the model's Meta."
             )
+        # 克隆当前queryset
         obj = self._chain()
+        # 设置limit，只需要查询一条数据
         obj.query.set_limits(high=1)
         obj.query.clear_ordering(force=True)
         obj.query.add_ordering(*order_by)
+        # 通过get方法来进行查询
         return obj.get()
 
     def earliest(self, *fields):
+        # 如果queryset已经切片过了，那么不能够再进行查询
         if self.query.is_sliced:
             raise TypeError('Cannot change a query once a slice has been taken.')
         return self._earliest(*fields)
@@ -714,7 +764,12 @@ class QuerySet:
         return self.reverse()._earliest(*fields)
 
     def first(self):
-        """Return the first object of a query or None if no match is found."""
+        """
+        Return the first object of a query or None if no match is found.
+        返回查询结果中的第一条，如果没有查询到数据则返回None
+        """
+        # 判断query对象中是否有设置排序，如果没有则根据pk(也就是主键)进行排序
+        # 对queryset进行切片，返回一条数据，如果queryset中没有数据，那么就返回None
         for obj in (self if self.ordered else self.order_by('pk'))[:1]:
             return obj
 
@@ -885,37 +940,64 @@ class QuerySet:
     ##################################################
 
     def raw(self, raw_query, params=(), translations=None, using=None):
+        """
+        根据原始的sql语句来进行查询，查询后返回RawQuerySet对象。RawQuerySet查询到的数据仍然
+        会填充到模型类对象中。
+        :params raw_query: sql语句
+        :params params: sql参数
+        """
+        # 判断是否有指定使用哪个数据库配置
         if using is None:
             using = self.db
+        # 创建一个RawQuerySet对象
         qs = RawQuerySet(raw_query, model=self.model, params=params, translations=translations, using=using)
         qs._prefetch_related_lookups = self._prefetch_related_lookups[:]
         return qs
 
     def _values(self, *fields, **expressions):
+        # 克隆当前queryset
         clone = self._chain()
         if expressions:
             clone = clone.annotate(**expressions)
         clone._fields = fields
+        # 设置查询时的字段
         clone.query.set_values(fields)
         return clone
 
     def values(self, *fields, **expressions):
+        """
+        根据传入的fields进行查询，返回的结果为queryset，当从该queryset中
+        获取数据时，返回的是包含数据的多个字典(不再是返回模型类对象)
+        该方法不会直接进行查询，只是对queryset和query进行一定的设置
+        :params fields: 要查询的字段，返回的结果中只会包含fields中指定的字段
+        """
+        # 将expresssion中的元素与fields进行合并
         fields += tuple(expressions)
+        # 设置查询字段
         clone = self._values(*fields, **expressions)
+        # 设置queryset的迭代器(通过该迭代器来进行数据查询和获取)
         clone._iterable_class = ValuesIterable
         return clone
 
     def values_list(self, *fields, flat=False, named=False):
+        """
+        查询结果为元组格式，只包含要查询字段的值
+        :params fields: 要查询的字段，返回的结果中只会包含fields中指定的字段
+        :params flat: 扁平化(设置该参数为True后，fields只能有一个字段，返回的结果是包含所有查询结果的该字段的值，也就是将这些都放在同一个列表中)
+        """
         if flat and named:
             raise TypeError("'flat' and 'named' can't be used together.")
         if flat and len(fields) > 1:
             raise TypeError("'flat' is not valid when values_list is called with more than one field.")
 
+        # 传入的字段不一定就是对应模型类中的字段名，可能还有其他的类型，所以需要先进行过滤，保留非特殊的字段
         field_names = {f for f in fields if not hasattr(f, 'resolve_expression')}
         _fields = []
         expressions = {}
         counter = 1
+        # 遍历传入的fields
         for field in fields:
+            # 对字段中包含resolve_expression属性的进行处理(这里判断为True代表着遍历到的field不为字符串)
             if hasattr(field, 'resolve_expression'):
                 field_id_prefix = getattr(field, 'default_alias', field.__class__.__name__.lower())
                 while True:
@@ -928,7 +1010,9 @@ class QuerySet:
             else:
                 _fields.append(field)
 
+        # 调用values，设置查询字段
         clone = self._values(*_fields, **expressions)
+        # 根据不同情况使用不同的迭代器类
         clone._iterable_class = (
             NamedValuesListIterable if named
             else FlatValuesListIterable if flat
@@ -1215,9 +1299,14 @@ class QuerySet:
         return clone
 
     def order_by(self, *field_names):
-        """Return a new QuerySet instance with the ordering changed."""
+        """
+        Return a new QuerySet instance with the ordering changed.
+        返回一个新的queryset实例对象，并且改变queryset中的排序选项
+
+        """
         if self.query.is_sliced:
             raise TypeError('Cannot reorder a query once a slice has been taken.')
+        # 克隆当前queryset
         obj = self._chain()
         obj.query.clear_ordering(force=True, clear_default=False)
         obj.query.add_ordering(*field_names)
@@ -1236,11 +1325,17 @@ class QuerySet:
 
     def extra(self, select=None, where=None, params=None, tables=None,
               order_by=None, select_params=None):
-        """Add extra SQL fragments to the query."""
+        """
+        Add extra SQL fragments to the query.
+        添加额外的sql片段，将额外添加的sql内容记录到query对象中
+
+        """
         self._not_support_combined_queries('extra')
+        # queryset切片后不允许再调用当前方法
         if self.query.is_sliced:
             raise TypeError('Cannot change a query once a slice has been taken.')
         clone = self._chain()
+        # 将sql片段添加到query对象中
         clone.query.add_extra(select, select_params, where, params, tables, order_by)
         return clone
 
@@ -1249,6 +1344,7 @@ class QuerySet:
         if self.query.is_sliced:
             raise TypeError('Cannot reverse a query once a slice has been taken.')
         clone = self._chain()
+        # 对原本的ordering进行取反
         clone.query.standard_ordering = not clone.query.standard_ordering
         return clone
 
@@ -1305,9 +1401,11 @@ class QuerySet:
         """
         Return True if the QuerySet is ordered -- i.e. has an order_by()
         clause or a default ordering on the model (or is empty).
+        如果queryset是已经设置了排序，那么返回True
         """
         if isinstance(self, EmptyQuerySet):
             return True
+        # 只要其中一个不为空，那么都会返回True
         if self.query.extra_order_by or self.query.order_by:
             return True
         elif (
